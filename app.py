@@ -15,7 +15,7 @@ def extract_text_with_pdfplumber(file_path):
     return text
 
 def segment_topics_updated(text):
-    pattern = re.compile(r'^(\d+\.)', re.MULTILINE)
+    pattern = re.compile(r'^(\d{1,3}\.\s)', re.MULTILINE)
     matches = list(pattern.finditer(text))
     segments = []
     for i in range(len(matches)):
@@ -36,11 +36,12 @@ def get_table_download_link(df, filename="data.xlsx"):
         df.to_excel(tmpfile.name, index=False)
         with open(tmpfile.name, "rb") as f:
             encoded = base64.b64encode(f.read()).decode('utf-8')
-    href = f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{encoded}" download="{filename}">Baixe a planilha Excel</a>'
+    href = f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{encoded}" download="{filename}">Baixe a planilha Excel com os tópicos do parecer</a>'
     return href
 
 # Código Streamlit
 st.title('Segmentador de Tópicos em PDF')
+st.write('Insira um parecer da AGU em PDF para converter a estrutura numa planilha. O intuito é facilitar a organização de inforamções para análise e atendimento das recomendações feitas pela procuradoria')
 uploaded_file = st.file_uploader("Escolha um arquivo PDF", type="pdf")
 
 if st.button('Segmentar Tópicos'):
@@ -56,7 +57,7 @@ if st.button('Segmentar Tópicos'):
             # Segmentando os tópicos e criando um DataFrame
             segmented_topics = segment_topics_updated(cleaned_text)
             data = [[topic.split('.', 1)[0].strip(), topic.split('.', 1)[1].strip()] for topic in segmented_topics]
-            df = pd.DataFrame(data, columns=['Topic Number', 'Topic Content'])
+            df = pd.DataFrame(data, columns=['Número do tópico', 'Conteúdo'])
             
             # Mostrando os tópicos na interface
             st.dataframe(df)
