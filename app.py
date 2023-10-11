@@ -1,9 +1,26 @@
 import streamlit as st
 import pandas as pd
 import pdfplumber
+import base64
 import re
 import tempfile
-import base64
+
+def extract_tables_from_pdf(pdf_path):
+    with pdfplumber.open(pdf_path) as pdf:
+        # Inicializando um DataFrame vazio para armazenar todas as tabelas
+        all_tables = pd.DataFrame()
+        
+        # Iterando através de cada página do PDF
+        for page in pdf.pages:
+            # Extraindo tabelas da página atual
+            table = page.extract_table()
+            
+            # Convertendo a tabela em um DataFrame e concatenando com all_tables
+            if table is not None:
+                df = pd.DataFrame(table[1:], columns=table[0])
+                all_tables = pd.concat([all_tables, df], ignore_index=True)
+        
+    return all_tables
 
 
 # Funções previamente definidas
@@ -39,33 +56,56 @@ def get_table_download_link(df, filename="data.xlsx"):
     href = f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{encoded}" download="{filename}">Baixe a planilha Excel com os tópicos do parecer</a>'
     return href
 
-# Código Streamlit
-st.title('Segmentador de Tópicos em PDF')
-st.write('Insira um parecer da AGU em PDF para converter a estrutura numa planilha. O intuito é facilitar a organização de inforamções para análise e atendimento das recomendações feitas pela procuradoria')
-uploaded_file = st.file_uploader("Escolha um arquivo PDF", type="pdf")
 
-if st.button('Segmentar Tópicos'):
+
+# Página de extração de tabelas
+def page_extract_tables():
+    st.title('Extractor de Tabelas PDF')
+    uploaded_file = st.file_uploader("Escolha um arquivo PDF", type="pdf")
     if uploaded_file is not None:
-        try:
-            # Extraindo e limpando o texto
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmpfile:
-                tmpfile.write(uploaded_file.read())
-                pdf_text = extract_text_with_pdfplumber(tmpfile.name)
-            unwanted_term = "supersapiens.agu.gov.br/apps/tarefas/administrativo/minhas-tarefas/entrada/tarefa/"
-            cleaned_text = remove_unwanted_lines(pdf_text, unwanted_term)
-            
-            # Segmentando os tópicos e criando um DataFrame
-            segmented_topics = segment_topics_updated(cleaned_text)
-            data = [[topic.split('.', 1)[0].strip(), topic.split('.', 1)[1].strip()] for topic in segmented_topics]
-            df = pd.DataFrame(data, columns=['Número do tópico', 'Conteúdo'])
-            
-            # Mostrando os tópicos na interface
-            st.dataframe(df)
-            
-            # Download da planilha Excel
-            st.markdown("### Download da Planilha Excel")
-            st.markdown(get_table_download_link(df), unsafe_allow_html=True)
-        except Exception as e:
-            st.error(f"Ocorreu um erro: {str(e)}")
-    else:
-        st.warning("Por favor, faça upload de um arquivo PDF.")
+        with st.spinner('Extraindo tabelas...'):
+            with open("/tmp/temp.pdf", "wb") as f:
+                f.write(uploaded_file.read())
+            tables = extract_tables_from_pdf("/tmp/temp.pdf")
+            st.success('Tabelas extraídas com sucesso!')
+        st.dataframe(tables.head())
+        if st.button('Baixar Tabelas como Excel'):
+            towrite = io.BytesIO()
+            tables.to_excel(towrite, index=False, engine='openpyxl')  
+            towrite.seek(0)
+            b64 = base64.b64encode(towrite.read()).decode()
+            link = f'<a href="data:application/octet-stream;base64,{b64}" download="extracted_tables.xlsx">Baixar Excel</a>'
+            st.markdown(link, unsafe_allow_html=True)
+
+# Página de segmentação de tópicos
+def page_segment_topics():
+    st.title('Segmentador de Tópicos em PDF')
+    st.write('Insira um parecer da AGU em PDF para converter a estrutura numa planilha')
+    uploaded_file = st.file_uploader("Escolha um arquivo PDF", type="pdf")
+    if st.button('Segmentar Tópicos'):
+        if uploaded_file is not None:
+            try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmpfile:
+                    tmpfile.write(uploaded_file.read())
+                    pdf_text = extract_text_with_pdfplumber(tmpfile.name)
+                unwanted_term = "supersapiens.agu.gov.br/apps/tarefas/administrativo/minhas-tarefas/entrada/tarefa/"
+                cleaned_text = remove_unwanted_lines(pdf_text, unwanted_term)
+                segmented_topics = segment_topics_updated(cleaned_text)
+                data = [[topic.split('.', 1)[0].strip(), topic.split('.', 1)[1].strip()] for topic in segmented_topics]
+                df = pd.DataFrame(data, columns=['Número do tópico', 'Conteúdo'])
+                st.dataframe(df)
+                st.markdown("### Download da Planilha Excel")
+                st.markdown(get_table_download_link(df), unsafe_allow_html=True)
+            except Exception as e:
+                st.error(f"Ocorreu um erro: {str(e)}")
+        else:
+            st.warning("Por favor, faça upload de um arquivo PDF.")
+
+# Estrutura da aplicação com abas
+st.sidebar.title("Navegação")
+page = st.sidebar.radio("Escolha a página:", ('Segmentar Tópicos AGU','Extrair Tabelas de PDF'))
+
+if page == 'Extrair Tabelas de PDF':
+    page_extract_tables()
+elif page == 'Segmentar Tópicos AGU':
+    page_segment_topics()
